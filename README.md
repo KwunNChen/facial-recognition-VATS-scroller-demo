@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
-
 ## Getting Started
 Are you too lazy to swipe on your screen? Do your hands get cold in the cold Berkeley weather? Look no further! You can now use your face to scroll up and down on your computer to scroll, and like reels!
 
