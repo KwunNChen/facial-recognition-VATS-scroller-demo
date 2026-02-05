@@ -78,10 +78,10 @@ export default function FaceScrollController({
   });
 
   // Tunables (sliders)
-  const [downThreshold, setDownThreshold] = useState(0.055); // pitchDelta > => DOWN
-  const [upThreshold, setUpThreshold] = useState(0.045); // pitchDelta < - => UP
-  const [tiltThreshold, setTiltThreshold] = useState(0.10); // rollDelta magnitude
-  const [framesNeeded, setFramesNeeded] = useState(4);
+  const [downThreshold, setDownThreshold] = useState(0.04); // pitchDelta > => DOWN
+  const [upThreshold, setUpThreshold] = useState(0.04); // pitchDelta < - => UP
+  const [tiltThreshold, setTiltThreshold] = useState(0.15); // rollDelta magnitude
+  const [framesNeeded, setFramesNeeded] = useState(3);
 
   // Keep tunables in refs for loop
   const downThrRef = useRef(downThreshold);
@@ -192,9 +192,14 @@ export default function FaceScrollController({
         const face = results.faceLandmarks[0];
 
         // Pitch proxy: nose vs forehead y-distance
+// ✅ Better nod signal: nose relative to the eye line
         const nose = face[1];
-        const forehead = face[10];
-        const pitch = nose.y - forehead.y;
+        const leftEyeOuter = face[33];
+        const rightEyeOuter = face[263];
+        const eyeMidY = (leftEyeOuter.y + rightEyeOuter.y) / 2;
+
+        const pitch = nose.y - eyeMidY;
+
 
         // Roll proxy: eye-line tilt
         const roll = computeRoll(face);
@@ -214,12 +219,19 @@ export default function FaceScrollController({
         const tiltThr = tiltThrRef.current;
         const need = framesRef.current;
 
-        const isDown = pitchDelta > downThr;
-        const isUp = pitchDelta < -upThr;
+        const isDownRaw = pitchDelta > downThr;
+        const isUpRaw = pitchDelta < -upThr;
 
-        // Roll: positive vs negative depends on camera mirroring; we’ll expose both states in debug.
+        // Roll...
+        const DEADZONE = tiltThr * 0.5; // ignore small head wobble
         const isTiltLeft = rollDelta < -tiltThr;
         const isTiltRight = rollDelta > tiltThr;
+
+        // Only block nod if we're currently accumulating tilt frames (real tilt)
+        const tilting = leftFramesRef.current > 0 || rightFramesRef.current > 0;
+
+        const isDown = !tilting && isDownRaw;
+        const isUp = !tilting && isUpRaw;
 
         // Frame accumulation
         downFramesRef.current = isDown ? downFramesRef.current + 1 : 0;
@@ -316,19 +328,19 @@ export default function FaceScrollController({
   }, []);
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        bottom: 12,
-        left: 12,
-        background: "white",
-        padding: 10,
-        borderRadius: 10,
-        fontSize: 12,
-        zIndex: 20,
-        width: 320,
-      }}
-    >
+    <div style={{
+    position: "fixed",
+    bottom: 12,
+    left: 12,
+    background: "rgba(0,0,0,0.75)",
+    color: "white",
+    padding: 10,
+    borderRadius: 10,
+    fontSize: 12,
+    zIndex: 20,
+    width: 320,
+    }}>
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ fontWeight: 700 }}>{status}</div>
         <button
@@ -363,7 +375,7 @@ export default function FaceScrollController({
         </div>
         <input
           type="range"
-          min="0.020"
+          min="0.001"
           max="0.120"
           step="0.001"
           value={downThreshold}
@@ -379,7 +391,7 @@ export default function FaceScrollController({
         </div>
         <input
           type="range"
-          min="0.020"
+          min="0.001"
           max="0.120"
           step="0.001"
           value={upThreshold}

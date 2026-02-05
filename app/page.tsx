@@ -1,33 +1,54 @@
 "use client";
+
 import FaceScrollController from "@/components/FaceScrollController";
 import { useEffect, useRef, useState } from "react";
 
-const reels = Array.from({ length: 6 }, (_, i) => ({
-  id: i + 1,
-  title: `Reel ${i + 1}`,
-}));
+const reels = [
+  {
+    id: 1,
+    user: "nature_daily",
+    caption: "Morning light over the ridge 🌄",
+    src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
+  },
+  {
+    id: 2,
+    user: "cityvibes",
+    caption: "Night drive through downtown 🚗",
+    src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4",
+  },
+  {
+    id: 3,
+    user: "sports_clipz",
+    caption: "That finish was unreal 😮",
+    src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
+  },
+  {
+    id: 4,
+    user: "travelwithme",
+    caption: "Tiny roads, big views ✈️",
+    src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+  },
+  {
+    id: 5,
+    user: "foodmode",
+    caption: "Crunch test ✅",
+    src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+  },
+  {
+    id: 6,
+    user: "random",
+    caption: "POV: you found a better workflow",
+    src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+  },
+];
 
 export default function Home() {
+  const [index, setIndex] = useState(0);
+  const indexRef = useRef(0);
+  const reelRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const [liked, setLiked] = useState<boolean[]>(Array(reels.length).fill(false));
   const [saved, setSaved] = useState<boolean[]>(Array(reels.length).fill(false));
-  const [index, setIndex] = useState(0);
-  const reelRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const indexRef = useRef(0);
-  function toggleLike() {
-  setLiked((arr) => {
-    const copy = [...arr];
-    copy[indexRef.current] = !copy[indexRef.current];
-    return copy;
-  });
-}
-
-function toggleSave() {
-  setSaved((arr) => {
-    const copy = [...arr];
-    copy[indexRef.current] = !copy[indexRef.current];
-    return copy;
-  });
-}
 
   useEffect(() => {
     indexRef.current = index;
@@ -49,6 +70,49 @@ function toggleSave() {
     scrollTo(i);
   }
 
+  function toggleLike() {
+    setLiked((arr) => {
+      const copy = [...arr];
+      copy[indexRef.current] = !copy[indexRef.current];
+      return copy;
+    });
+  }
+
+  function toggleSave() {
+    setSaved((arr) => {
+      const copy = [...arr];
+      copy[indexRef.current] = !copy[indexRef.current];
+      return copy;
+    });
+  }
+  
+  function togglePlay() {
+  const v = videoRefs.current[indexRef.current];
+  if (!v) return;
+
+  if (v.paused) {
+    v.play().catch(() => {});
+  } else {
+    v.pause();
+  }
+}
+
+  // Auto-play current reel, pause others
+  useEffect(() => {
+    videoRefs.current.forEach((v, i) => {
+      if (!v) return;
+      if (i === index) {
+        v.play().catch(() => {});
+      } else {
+        v.pause();
+        try {
+          v.currentTime = 0;
+        } catch {}
+      }
+    });
+  }, [index]);
+
+  // Update index when user scrolls manually
   useEffect(() => {
     const els = reelRefs.current.filter(Boolean) as HTMLDivElement[];
     if (els.length === 0) return;
@@ -76,25 +140,14 @@ function toggleSave() {
   }, []);
 
   return (
-    <main style={{ height: "100vh", overflowY: "scroll", scrollSnapType: "y mandatory" }}>
-      <div
-        style={{
-          position: "fixed",
-          top: 12,
-          left: 12,
-          zIndex: 10,
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-        }}
-      >
-        <button onClick={prev}>Prev</button>
-        <button onClick={next}>Next</button>
-        <div style={{ background: "white", padding: "4px 8px", borderRadius: 6 }}>
-          {index + 1}/{reels.length}
-        </div>
-      </div>
-
+    <main
+      style={{
+        height: "100vh",
+        overflowY: "scroll",
+        scrollSnapType: "y mandatory",
+        background: "black",
+      }}
+    >
       {reels.map((r, i) => (
         <div
           key={r.id}
@@ -104,29 +157,116 @@ function toggleSave() {
           style={{
             height: "100vh",
             scrollSnapAlign: "start",
-            display: "grid",
-            placeItems: "center",
-            fontSize: 56,
-            borderBottom: "1px solid #ddd",
+            position: "relative",
+            background: "black",
+            overflow: "hidden",
           }}
         >
-          <div style={{ textAlign: "center" }}>
-          <div>{r.title}</div>
-          <div style={{ marginTop: 12, fontSize: 18 }}>
-            ❤️ {liked[i] ? "Liked" : "Not liked"} &nbsp; | &nbsp; 🔖 {saved[i] ? "Saved" : "Not saved"}
+          {/* Video */}
+          <video
+            ref={(el) => {
+              videoRefs.current[i] = el;
+            }}
+            src={r.src}
+            muted
+            playsInline
+            loop
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+            }}
+          />
+
+          {/* Top counter pill */}
+          <div
+            style={{
+              position: "absolute",
+              top: 12,
+              left: 12,
+              padding: "6px 10px",
+              borderRadius: 10,
+              background: "rgba(0,0,0,0.45)",
+              color: "white",
+              fontSize: 12,
+              fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+            }}
+          >
+            {i + 1}/{reels.length}
+          </div>
+
+          {/* Bottom-left overlay */}
+          <div
+            style={{
+              position: "absolute",
+              bottom: 18,
+              left: 16,
+              right: 90,
+              color: "white",
+              textShadow: "0 2px 10px rgba(0,0,0,0.65)",
+              fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+            }}
+          >
+            <div style={{ fontWeight: 800, marginBottom: 6 }}>@{r.user}</div>
+            <div style={{ opacity: 0.95 }}>{r.caption}</div>
+          </div>
+
+          {/* Right-side actions */}
+          <div
+            style={{
+              position: "absolute",
+              right: 14,
+              bottom: 80,
+              display: "flex",
+              flexDirection: "column",
+              gap: 14,
+              alignItems: "center",
+              color: "white",
+              fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+            }}
+          >
+            <button
+              onClick={toggleLike}
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: 26,
+                border: "1px solid rgba(255,255,255,0.25)",
+                background: "rgba(0,0,0,0.35)",
+                color: "white",
+                fontSize: 22,
+                cursor: "pointer",
+              }}
+            >
+              {liked[i] ? "❤️" : "🤍"}
+            </button>
+
+            <button
+              onClick={toggleSave}
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: 26,
+                border: "1px solid rgba(255,255,255,0.25)",
+                background: "rgba(0,0,0,0.35)",
+                color: "white",
+                fontSize: 22,
+                cursor: "pointer",
+              }}
+            >
+              {saved[i] ? "🔖" : "📑"}
+            </button>
           </div>
         </div>
-
-        </div>
       ))}
+
+      {/* Face controls */}
       <FaceScrollController
-      onLookDown={next}
-      onLookUp={prev}
-      onTiltLeft={toggleLike}
-      onTiltRight={toggleSave}
-/>
-
-
+        onLookDown={next}
+        onLookUp={prev}
+        onTiltLeft={toggleLike}
+        onTiltRight={toggleSave}
+      />
     </main>
   );
 }
