@@ -43,10 +43,25 @@ const reels = [
 ];
 
 export default function Home() {
-  const [index, setIndex] = useState(0);
+  const reelRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const indexRef = useRef(0);
+
+  const [index, setIndex] = useState(0);
+  const [muted, setMuted] = useState(true);
+  const [paused, setPaused] = useState(false);
+
+  const [liked, setLiked] = useState<boolean[]>(Array(reels.length).fill(false));
+  const [saved, setSaved] = useState<boolean[]>(Array(reels.length).fill(false));
+
+  // Smooth progress for ACTIVE reel only
+  const [progressPct, setProgressPct] = useState(0); // 0..1
+  const progRafRef = useRef<number | null>(null);
+  const lastProgUiRef = useRef(0);
+
+  // Global action cooldown so gestures don’t “carry over”
   const lastActionRef = useRef(0);
-  const ACTION_COOLDOWN_MS = 700;
+  const ACTION_COOLDOWN_MS = 650;
 
   function canAct() {
     const now = Date.now();
@@ -54,11 +69,6 @@ export default function Home() {
     lastActionRef.current = now;
     return true;
   }
-
-  const reelRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
-  const [liked, setLiked] = useState<boolean[]>(Array(reels.length).fill(false));
-  const [saved, setSaved] = useState<boolean[]>(Array(reels.length).fill(false));
 
   useEffect(() => {
     indexRef.current = index;
@@ -69,16 +79,27 @@ export default function Home() {
   }
 
   function next() {
+    if (!canAct()) return;
     const i = Math.min(indexRef.current + 1, reels.length - 1);
     setIndex(i);
     scrollTo(i);
-    lastActionRef.current = Date.now();
   }
 
   function prev() {
+    if (!canAct()) return;
     const i = Math.max(indexRef.current - 1, 0);
     setIndex(i);
     scrollTo(i);
+  }
+
+  function toggleMuted() {
+    if (!canAct()) return;
+    setMuted((m) => !m);
+  }
+
+  function togglePause() {
+    if (!canAct()) return;
+    setPaused((p) => !p);
   }
 
   function toggleLike() {
@@ -100,34 +121,8 @@ export default function Home() {
       return copy;
     });
   }
-  
-  function togglePlay() {
-  const v = videoRefs.current[indexRef.current];
-  if (!v) return;
 
-  if (v.paused) {
-    v.play().catch(() => {});
-  } else {
-    v.pause();
-  }
-}
-
-  // Auto-play current reel, pause others
-  useEffect(() => {
-    videoRefs.current.forEach((v, i) => {
-      if (!v) return;
-      if (i === index) {
-        v.play().catch(() => {});
-      } else {
-        v.pause();
-        try {
-          v.currentTime = 0;
-        } catch {}
-      }
-    });
-  }, [index]);
-
-  // Update index when user scrolls manually
+  // Keep counter in sync with manual scroll
   useEffect(() => {
     const els = reelRefs.current.filter(Boolean) as HTMLDivElement[];
     if (els.length === 0) return;
@@ -154,15 +149,79 @@ export default function Home() {
     return () => io.disconnect();
   }, []);
 
+  // Playback policy: only active reel plays; apply muted + paused
+  useEffect(() => {
+    videoRefs.current.forEach((v, i) => {
+      if (!v) return;
+
+      v.muted = muted;
+
+      if (i === index) {
+        if (paused) v.pause();
+        else v.play().catch(() => {});
+      } else {
+        v.pause();
+        v.currentTime = 0;
+      }
+    });
+
+    // reset progress when switching reels
+    setProgressPct(0);
+  }, [index, muted, paused]);
+
+  // Smooth progress loop (rAF) for active reel
+  useEffect(() => {
+    if (progRafRef.current) cancelAnimationFrame(progRafRef.current);
+
+    function tick() {
+      const v = videoRefs.current[index];
+      if (v && isFinite(v.duration) && v.duration > 0) {
+        const pct = v.currentTime / v.duration;
+
+        // throttle React updates (~20fps)
+        const now = performance.now();
+        if (now - lastProgUiRef.current > 50) {
+          lastProgUiRef.current = now;
+          setProgressPct(Math.max(0, Math.min(1, pct)));
+        }
+      } else {
+        setProgressPct(0);
+      }
+      progRafRef.current = requestAnimationFrame(tick);
+    }
+
+    progRafRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      if (progRafRef.current) cancelAnimationFrame(progRafRef.current);
+    };
+  }, [index]);
+
   return (
-    <main
-      style={{
-        height: "100vh",
-        overflowY: "scroll",
-        scrollSnapType: "y mandatory",
-        background: "black",
-      }}
-    >
+    <main style={{ height: "100vh", overflowY: "scroll", scrollSnapType: "y mandatory" }}>
+      {/* Minimal top controls only (no mute here anymore) */}
+      <div
+        style={{
+          position: "fixed",
+          top: 12,
+          left: 12,
+          zIndex: 10,
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+          pointerEvents: "none",
+          opacity: 0.35,
+        }}
+      >
+        <div style={{ display: "flex", gap: 8, alignItems: "center", pointerEvents: "auto" }}>
+          <button onClick={prev}>Prev</button>
+          <button onClick={next}>Next</button>
+          <div style={{ background: "white", padding: "4px 8px", borderRadius: 6 }}>
+            {index + 1}/{reels.length}
+          </div>
+        </div>
+      </div>
+
       {reels.map((r, i) => (
         <div
           key={r.id}
@@ -175,6 +234,7 @@ export default function Home() {
             position: "relative",
             background: "black",
             overflow: "hidden",
+            borderBottom: "1px solid #111",
           }}
         >
           {/* Video */}
@@ -183,9 +243,9 @@ export default function Home() {
               videoRefs.current[i] = el;
             }}
             src={r.src}
-            muted
+            muted={muted}
             playsInline
-            loop
+            preload="metadata"
             style={{
               width: "100%",
               height: "100%",
@@ -193,37 +253,46 @@ export default function Home() {
             }}
           />
 
-          {/* Top counter pill */}
+          {/* Progress bar (smooth) */}
           <div
             style={{
               position: "absolute",
-              top: 12,
-              left: 12,
-              padding: "6px 10px",
-              borderRadius: 10,
-              background: "rgba(0,0,0,0.45)",
-              color: "white",
-              fontSize: 12,
-              fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+              top: 0,
+              left: 0,
+              height: 4,
+              width: "100%",
+              background: "rgba(255,255,255,0.18)",
+              pointerEvents: "none",
             }}
           >
-            {i + 1}/{reels.length}
+            <div
+              style={{
+                height: "100%",
+                width: `${(i === index ? progressPct : 0) * 100}%`,
+                background: "white",
+                transition: "none",
+              }}
+            />
           </div>
 
           {/* Bottom-left overlay */}
           <div
             style={{
               position: "absolute",
-              bottom: 18,
               left: 16,
-              right: 90,
+              bottom: 22,
               color: "white",
-              textShadow: "0 2px 10px rgba(0,0,0,0.65)",
-              fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+              maxWidth: "70%",
+              textShadow: "0 2px 12px rgba(0,0,0,0.7)",
+              fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
+              pointerEvents: "none",
             }}
           >
-            <div style={{ fontWeight: 800, marginBottom: 6 }}>@{r.user}</div>
-            <div style={{ opacity: 0.95 }}>{r.caption}</div>
+            <div style={{ fontWeight: 800, fontSize: 16 }}>@{r.user}</div>
+            <div style={{ marginTop: 6, fontSize: 14, opacity: 0.95 }}>{r.caption}</div>
+            <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
+              {paused ? "Paused" : "Playing"} • {muted ? "Muted" : "Sound on"}
+            </div>
           </div>
 
           {/* Right-side actions */}
@@ -231,27 +300,30 @@ export default function Home() {
             style={{
               position: "absolute",
               right: 14,
-              bottom: 80,
+              bottom: 90,
               display: "flex",
               flexDirection: "column",
               gap: 14,
               alignItems: "center",
               color: "white",
-              fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+              textShadow: "0 2px 12px rgba(0,0,0,0.7)",
+              fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
+              pointerEvents: "none",
             }}
           >
             <button
               onClick={toggleLike}
               style={{
-                width: 52,
-                height: 52,
-                borderRadius: 26,
-                border: "1px solid rgba(255,255,255,0.25)",
+                pointerEvents: "auto",
                 background: "rgba(0,0,0,0.35)",
+                border: "1px solid rgba(255,255,255,0.25)",
                 color: "white",
-                fontSize: 22,
+                borderRadius: 999,
+                padding: "10px 12px",
                 cursor: "pointer",
               }}
+              aria-label="Like"
+              title="Like"
             >
               {liked[i] ? "❤️" : "🤍"}
             </button>
@@ -259,31 +331,75 @@ export default function Home() {
             <button
               onClick={toggleSave}
               style={{
-                width: 52,
-                height: 52,
-                borderRadius: 26,
-                border: "1px solid rgba(255,255,255,0.25)",
+                pointerEvents: "auto",
                 background: "rgba(0,0,0,0.35)",
+                border: "1px solid rgba(255,255,255,0.25)",
                 color: "white",
-                fontSize: 22,
+                borderRadius: 999,
+                padding: "10px 12px",
                 cursor: "pointer",
               }}
+              aria-label="Save"
+              title="Save"
             >
               {saved[i] ? "🔖" : "📑"}
             </button>
+
+            <button
+              onClick={togglePause}
+              style={{
+                pointerEvents: "auto",
+                background: "rgba(0,0,0,0.35)",
+                border: "1px solid rgba(255,255,255,0.25)",
+                color: "white",
+                borderRadius: 999,
+                padding: "10px 12px",
+                cursor: "pointer",
+              }}
+              aria-label="Pause/Play"
+              title="Pause/Play"
+            >
+              {paused ? "▶️" : "⏸️"}
+            </button>
+          </div>
+
+          {/* Small tag (top-right) */}
+          <div
+            style={{
+              position: "absolute",
+              top: 12,
+              right: 12,
+              background: "rgba(0,0,0,0.45)",
+              color: "white",
+              padding: "6px 10px",
+              borderRadius: 999,
+              fontSize: 12,
+              fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
+              pointerEvents: "none",
+            }}
+          >
+            Reel {i + 1}
           </div>
         </div>
       ))}
 
-      {/* Face controls */}
+      {/* Face controls:
+          - Look down: next
+          - Look up: prev
+          - Tilt left: like
+          - Tilt right: save
+          - Blink: pause/play
+          - Mute moved into debug UI
+      */}
       <FaceScrollController
         onLookDown={next}
         onLookUp={prev}
         onTiltLeft={toggleLike}
         onTiltRight={toggleSave}
-        onBlink={togglePlay}
+        onBlink={togglePause}
+        muted={muted}
+        onToggleMute={toggleMuted}
       />
-
     </main>
   );
 }

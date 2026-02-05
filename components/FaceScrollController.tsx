@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 
 type Props = {
@@ -9,6 +9,9 @@ type Props = {
   onTiltLeft: () => void;
   onTiltRight: () => void;
   onBlink: () => void;
+
+  muted: boolean;
+  onToggleMute: () => void;
 };
 
 export default function FaceScrollController({
@@ -17,6 +20,8 @@ export default function FaceScrollController({
   onTiltLeft,
   onTiltRight,
   onBlink,
+  muted,
+  onToggleMute,
 }: Props) {
   // Stable callbacks (won't restart camera/model)
   const onLookDownRef = useRef(onLookDown);
@@ -40,6 +45,13 @@ export default function FaceScrollController({
   useEffect(() => {
     onBlinkRef.current = onBlink;
   }, [onBlink]);
+
+  // ✅ Accurate fired counters (never miss because of UI throttling)
+  const firedDownCountRef = useRef(0);
+  const firedUpCountRef = useRef(0);
+  const firedLeftCountRef = useRef(0);
+  const firedRightCountRef = useRef(0);
+  const firedBlinkCountRef = useRef(0);
 
   // Model/video refs
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -73,29 +85,25 @@ export default function FaceScrollController({
 
   // Debug UI
   const [debug, setDebug] = useState({
-    pitch: 0,
-    pitchBase: 0,
     pitchDelta: 0,
-    roll: 0,
-    rollBase: 0,
     rollDelta: 0,
     blink: 0,
     blinkFrames: 0,
-    blinkFired: 0,
     blinkLatched: false,
     state: "—",
     firedDown: 0,
     firedUp: 0,
     firedLeft: 0,
     firedRight: 0,
+    firedBlink: 0,
     fDown: 0,
     fUp: 0,
     fLeft: 0,
     fRight: 0,
   });
 
-  // Tunables (sliders) — defaults tuned for reliability
-  const [downThreshold, setDownThreshold] = useState(0.03);
+  // Tunables (sliders)
+  const [downThreshold, setDownThreshold] = useState(0.015);
   const [upThreshold, setUpThreshold] = useState(0.03);
   const [tiltThreshold, setTiltThreshold] = useState(0.25);
   const [framesNeeded, setFramesNeeded] = useState(2);
@@ -182,7 +190,7 @@ export default function FaceScrollController({
           },
           runningMode: "VIDEO",
           numFaces: 1,
-          outputFaceBlendshapes: true, // ✅ enables blink
+          outputFaceBlendshapes: true,
         });
 
         await waitForVideoReady(video);
@@ -211,19 +219,12 @@ export default function FaceScrollController({
       const results = landmarker.detectForVideo(video, performance.now());
 
       let state = "OK";
-      let firedDownInc = 0;
-      let firedUpInc = 0;
-      let firedLeftInc = 0;
-      let firedRightInc = 0;
-
-      // blink vars
       let blinkScore = 0;
-      let blinkFiredInc = 0;
 
       if (results.faceLandmarks?.length) {
         const face = results.faceLandmarks[0];
 
-        // ✅ Nod signal: nose relative to the eye line
+        // Nod signal: nose relative to eye line
         const nose = face[1];
         const leftEyeOuter = face[33];
         const rightEyeOuter = face[263];
@@ -232,7 +233,6 @@ export default function FaceScrollController({
 
         const roll = computeRoll(face);
 
-        // Calibrate baselines once
         if (pitchBaselineRef.current === null) pitchBaselineRef.current = pitch;
         if (rollBaselineRef.current === null) rollBaselineRef.current = roll;
 
@@ -250,23 +250,18 @@ export default function FaceScrollController({
         const isDownRaw = pitchDelta > downThr;
         const isUpRaw = pitchDelta < -upThr;
 
-        const dead = tiltThr * 0.65; // bigger deadzone = less accidental tilt
-
-        // Tilt detection (true tilt)
         const isTiltLeft = rollDelta < -tiltThr;
         const isTiltRight = rollDelta > tiltThr;
 
-        // Accumulate tilt frames ONLY when clearly past deadzone
-        leftFramesRef.current = rollDelta < -dead ? leftFramesRef.current + 1 : 0;
-        rightFramesRef.current = rollDelta > dead ? rightFramesRef.current + 1 : 0;
+        // accumulate tilt frames using the SAME threshold you show in UI
+        leftFramesRef.current = isTiltLeft ? leftFramesRef.current + 1 : 0;
+        rightFramesRef.current = isTiltRight ? rightFramesRef.current + 1 : 0;
 
-        // Consider "tilting" only if it's real (so nod isn't blocked randomly)
         const tilting = leftFramesRef.current > 0 || rightFramesRef.current > 0;
 
         const isDown = !tilting && isDownRaw;
         const isUp = !tilting && isUpRaw;
 
-        // Frame accumulation for nod
         downFramesRef.current = isDown ? downFramesRef.current + 1 : 0;
         upFramesRef.current = isUp ? upFramesRef.current + 1 : 0;
 
@@ -284,7 +279,8 @@ export default function FaceScrollController({
           upFramesRef.current = 0;
           leftFramesRef.current = 0;
           rightFramesRef.current = 0;
-          firedDownInc = 1;
+
+          firedDownCountRef.current += 1;
           onLookDownRef.current();
         }
 
@@ -295,18 +291,20 @@ export default function FaceScrollController({
           downFramesRef.current = 0;
           leftFramesRef.current = 0;
           rightFramesRef.current = 0;
-          firedUpInc = 1;
+
+          firedUpCountRef.current += 1;
           onLookUpRef.current();
         }
 
-        // TILT LEFT trigger
+        // TILT LEFT trigger  ✅ FIXED: increments LEFT
         if (leftFramesRef.current >= need && nowMs - lastLeftTriggerRef.current > cooldownMs) {
           lastLeftTriggerRef.current = nowMs;
           leftFramesRef.current = 0;
           rightFramesRef.current = 0;
           downFramesRef.current = 0;
           upFramesRef.current = 0;
-          firedLeftInc = 1;
+
+          firedLeftCountRef.current += 1; // ✅ was wrong before
           onTiltLeftRef.current();
         }
 
@@ -317,11 +315,12 @@ export default function FaceScrollController({
           leftFramesRef.current = 0;
           downFramesRef.current = 0;
           upFramesRef.current = 0;
-          firedRightInc = 1;
+
+          firedRightCountRef.current += 1;
           onTiltRightRef.current();
         }
 
-        // ✅ Blink detection from blendshapes
+        // Blink from blendshapes
         const bs = results.faceBlendshapes?.[0]?.categories;
         if (bs) {
           const left = bs.find((c) => c.categoryName === "eyeBlinkLeft")?.score ?? 0;
@@ -335,7 +334,6 @@ export default function FaceScrollController({
         const blinking = blinkScore > bThr;
         blinkFramesCountRef.current = blinking ? blinkFramesCountRef.current + 1 : 0;
 
-        // unlatch once eyes clearly open again
         if (!blinking && blinkLatchedRef.current && blinkScore < bThr * 0.5) {
           blinkLatchedRef.current = false;
         }
@@ -348,7 +346,8 @@ export default function FaceScrollController({
           lastBlinkTriggerRef.current = nowMs;
           blinkLatchedRef.current = true;
           blinkFramesCountRef.current = 0;
-          blinkFiredInc = 1;
+
+          firedBlinkCountRef.current += 1;
           onBlinkRef.current();
         }
 
@@ -356,22 +355,20 @@ export default function FaceScrollController({
         const now = performance.now();
         if (now - lastUiUpdate > 100) {
           lastUiUpdate = now;
-          setDebug((prev) => ({
-            pitch: Number(pitch.toFixed(3)),
-            pitchBase: Number(pitchBase.toFixed(3)),
+          setDebug(() => ({
             pitchDelta: Number(pitchDelta.toFixed(3)),
-            roll: Number(roll.toFixed(3)),
-            rollBase: Number(rollBase.toFixed(3)),
             rollDelta: Number(rollDelta.toFixed(3)),
             blink: Number(blinkScore.toFixed(2)),
             blinkFrames: blinkFramesCountRef.current,
-            blinkFired: prev.blinkFired + blinkFiredInc,
             blinkLatched: blinkLatchedRef.current,
             state,
-            firedDown: prev.firedDown + firedDownInc,
-            firedUp: prev.firedUp + firedUpInc,
-            firedLeft: prev.firedLeft + firedLeftInc,
-            firedRight: prev.firedRight + firedRightInc,
+
+            firedDown: firedDownCountRef.current,
+            firedUp: firedUpCountRef.current,
+            firedLeft: firedLeftCountRef.current,
+            firedRight: firedRightCountRef.current,
+            firedBlink: firedBlinkCountRef.current,
+
             fDown: downFramesRef.current,
             fUp: upFramesRef.current,
             fLeft: leftFramesRef.current,
@@ -394,6 +391,15 @@ export default function FaceScrollController({
     };
   }, []);
 
+  const btnStyle: React.CSSProperties = {
+    color: "white",
+    background: "rgba(255,255,255,0.15)",
+    border: "1px solid rgba(255,255,255,0.25)",
+    borderRadius: 6,
+    padding: "4px 8px",
+    cursor: "pointer",
+  };
+
   return (
     <div
       style={{
@@ -406,10 +412,10 @@ export default function FaceScrollController({
         borderRadius: 10,
         fontSize: 12,
         zIndex: 20,
-        width: 320,
+        width: 340,
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
         <div style={{ fontWeight: 700 }}>
           {status}{" "}
           <span style={{ fontWeight: 500, opacity: 0.85 }}>
@@ -418,35 +424,35 @@ export default function FaceScrollController({
           </span>
         </div>
 
-        <button
-          style={{
-            color: "white",
-            background: "rgba(255,255,255,0.15)",
-            border: "1px solid rgba(255,255,255,0.25)",
-            borderRadius: 6,
-            padding: "4px 8px",
-            cursor: "pointer",
-          }}
-          onClick={() => {
-            pitchBaselineRef.current = null;
-            rollBaselineRef.current = null;
-            downFramesRef.current = 0;
-            upFramesRef.current = 0;
-            leftFramesRef.current = 0;
-            rightFramesRef.current = 0;
-            blinkFramesCountRef.current = 0;
-            blinkLatchedRef.current = false;
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" style={btnStyle} onClick={onToggleMute}>
+            {muted ? "Unmute" : "Mute"}
+          </button>
 
-            setStatus("Recalibrating…");
+          <button
+            type="button"
+            style={btnStyle}
+            onClick={() => {
+              pitchBaselineRef.current = null;
+              rollBaselineRef.current = null;
+              downFramesRef.current = 0;
+              upFramesRef.current = 0;
+              leftFramesRef.current = 0;
+              rightFramesRef.current = 0;
+              blinkFramesCountRef.current = 0;
+              blinkLatchedRef.current = false;
 
-            if (recalTimeoutRef.current) window.clearTimeout(recalTimeoutRef.current);
-            recalTimeoutRef.current = window.setTimeout(() => {
-              setStatus("Face tracking active ✅");
-            }, 600);
-          }}
-        >
-          Recalibrate
-        </button>
+              setStatus("Recalibrating…");
+
+              if (recalTimeoutRef.current) window.clearTimeout(recalTimeoutRef.current);
+              recalTimeoutRef.current = window.setTimeout(() => {
+                setStatus("Face tracking active ✅");
+              }, 600);
+            }}
+          >
+            Recalibrate
+          </button>
+        </div>
       </div>
 
       <div style={{ marginTop: 8, fontFamily: "monospace" }}>
@@ -456,8 +462,9 @@ export default function FaceScrollController({
         <br />
         roll Δ: {debug.rollDelta} | fL/fR: {debug.fLeft}/{debug.fRight}
         <br />
-        blink: {debug.blink} frames: {debug.blinkFrames} fired: {debug.blinkFired}
+        blink: {debug.blink} frames: {debug.blinkFrames} fired: {debug.firedBlink}
         <br />
+        fired: D {debug.firedDown} / U {debug.firedUp} / L {debug.firedLeft} / R {debug.firedRight}
       </div>
 
       <div style={{ marginTop: 10 }}>
@@ -557,7 +564,14 @@ export default function FaceScrollController({
       </div>
 
       <div style={{ marginTop: 10 }}>
-        <video ref={videoRef} width={300} height={180} muted playsInline style={{ borderRadius: 10 }} />
+        <video
+          ref={videoRef}
+          width={320}
+          height={190}
+          muted={muted}
+          playsInline
+          style={{ borderRadius: 10, width: "100%" }}
+        />
       </div>
 
       <div style={{ marginTop: 8, opacity: 0.8 }}>
