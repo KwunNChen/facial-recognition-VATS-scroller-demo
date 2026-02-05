@@ -97,7 +97,7 @@ export default function FaceScrollController({
   // Tunables (sliders) — defaults tuned for reliability
   const [downThreshold, setDownThreshold] = useState(0.03);
   const [upThreshold, setUpThreshold] = useState(0.03);
-  const [tiltThreshold, setTiltThreshold] = useState(0.15);
+  const [tiltThreshold, setTiltThreshold] = useState(0.25);
   const [framesNeeded, setFramesNeeded] = useState(2);
 
   const [blinkThreshold, setBlinkThreshold] = useState(0.55);
@@ -458,7 +458,6 @@ export default function FaceScrollController({
         <br />
         blink: {debug.blink} frames: {debug.blinkFrames} fired: {debug.blinkFired}
         <br />
-        fired: D {debug.firedDown} / U {debug.firedUp} / L {debug.firedLeft} / R {debug.firedRight}
       </div>
 
       <div style={{ marginTop: 10 }}>
