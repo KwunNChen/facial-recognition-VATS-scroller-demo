@@ -45,6 +45,16 @@ const reels = [
 export default function Home() {
   const [index, setIndex] = useState(0);
   const indexRef = useRef(0);
+  const lastActionRef = useRef(0);
+  const ACTION_COOLDOWN_MS = 700;
+
+  function canAct() {
+    const now = Date.now();
+    if (now - lastActionRef.current < ACTION_COOLDOWN_MS) return false;
+    lastActionRef.current = now;
+    return true;
+  }
+
   const reelRefs = useRef<(HTMLDivElement | null)[]>([]);
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const [liked, setLiked] = useState<boolean[]>(Array(reels.length).fill(false));
@@ -62,6 +72,7 @@ export default function Home() {
     const i = Math.min(indexRef.current + 1, reels.length - 1);
     setIndex(i);
     scrollTo(i);
+    lastActionRef.current = Date.now();
   }
 
   function prev() {
@@ -71,17 +82,21 @@ export default function Home() {
   }
 
   function toggleLike() {
+    if (!canAct()) return;
     setLiked((arr) => {
       const copy = [...arr];
-      copy[indexRef.current] = !copy[indexRef.current];
+      const i = indexRef.current;
+      copy[i] = !copy[i];
       return copy;
     });
   }
 
   function toggleSave() {
+    if (!canAct()) return;
     setSaved((arr) => {
       const copy = [...arr];
-      copy[indexRef.current] = !copy[indexRef.current];
+      const i = indexRef.current;
+      copy[i] = !copy[i];
       return copy;
     });
   }
@@ -266,7 +281,9 @@ export default function Home() {
         onLookUp={prev}
         onTiltLeft={toggleLike}
         onTiltRight={toggleSave}
+        onBlink={togglePlay}
       />
+
     </main>
   );
 }
