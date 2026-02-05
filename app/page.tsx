@@ -1,65 +1,132 @@
-import Image from "next/image";
+"use client";
+import FaceScrollController from "@/components/FaceScrollController";
+import { useEffect, useRef, useState } from "react";
+
+const reels = Array.from({ length: 6 }, (_, i) => ({
+  id: i + 1,
+  title: `Reel ${i + 1}`,
+}));
 
 export default function Home() {
+  const [liked, setLiked] = useState<boolean[]>(Array(reels.length).fill(false));
+  const [saved, setSaved] = useState<boolean[]>(Array(reels.length).fill(false));
+  const [index, setIndex] = useState(0);
+  const reelRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const indexRef = useRef(0);
+  function toggleLike() {
+  setLiked((arr) => {
+    const copy = [...arr];
+    copy[indexRef.current] = !copy[indexRef.current];
+    return copy;
+  });
+}
+
+function toggleSave() {
+  setSaved((arr) => {
+    const copy = [...arr];
+    copy[indexRef.current] = !copy[indexRef.current];
+    return copy;
+  });
+}
+
+  useEffect(() => {
+    indexRef.current = index;
+  }, [index]);
+
+  function scrollTo(i: number) {
+    reelRefs.current[i]?.scrollIntoView({ behavior: "smooth" });
+  }
+
+  function next() {
+    const i = Math.min(indexRef.current + 1, reels.length - 1);
+    setIndex(i);
+    scrollTo(i);
+  }
+
+  function prev() {
+    const i = Math.max(indexRef.current - 1, 0);
+    setIndex(i);
+    scrollTo(i);
+  }
+
+  useEffect(() => {
+    const els = reelRefs.current.filter(Boolean) as HTMLDivElement[];
+    if (els.length === 0) return;
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        let best: { idx: number; ratio: number } | null = null;
+
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          const idx = els.indexOf(e.target as HTMLDivElement);
+          if (idx === -1) continue;
+
+          const ratio = e.intersectionRatio;
+          if (!best || ratio > best.ratio) best = { idx, ratio };
+        }
+
+        if (best && best.ratio >= 0.6) setIndex(best.idx);
+      },
+      { threshold: [0.1, 0.25, 0.5, 0.6, 0.75, 0.9] }
+    );
+
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main style={{ height: "100vh", overflowY: "scroll", scrollSnapType: "y mandatory" }}>
+      <div
+        style={{
+          position: "fixed",
+          top: 12,
+          left: 12,
+          zIndex: 10,
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <button onClick={prev}>Prev</button>
+        <button onClick={next}>Next</button>
+        <div style={{ background: "white", padding: "4px 8px", borderRadius: 6 }}>
+          {index + 1}/{reels.length}
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </div>
+
+      {reels.map((r, i) => (
+        <div
+          key={r.id}
+          ref={(el) => {
+            reelRefs.current[i] = el;
+          }}
+          style={{
+            height: "100vh",
+            scrollSnapAlign: "start",
+            display: "grid",
+            placeItems: "center",
+            fontSize: 56,
+            borderBottom: "1px solid #ddd",
+          }}
+        >
+          <div style={{ textAlign: "center" }}>
+          <div>{r.title}</div>
+          <div style={{ marginTop: 12, fontSize: 18 }}>
+            ❤️ {liked[i] ? "Liked" : "Not liked"} &nbsp; | &nbsp; 🔖 {saved[i] ? "Saved" : "Not saved"}
+          </div>
         </div>
-      </main>
-    </div>
+
+        </div>
+      ))}
+      <FaceScrollController
+      onLookDown={next}
+      onLookUp={prev}
+      onTiltLeft={toggleLike}
+      onTiltRight={toggleSave}
+/>
+
+
+    </main>
   );
 }
