@@ -39,15 +39,14 @@ You need:
 
 
 #### Controls (Face Gestures)
-Gesture	Action
-Nod down --> Next video
-Nod up --> Previous video
-Tilt left --> Like
-Tilt right --> Save
-Blink --> Pause / Play
-Press D	Toggle debug panel
-When debug panel is open, press unmute to hear sounds
-When debug panel is open, press recal (recalibrate) to make webcam adapt to your new surroundings
+- Nod down --> Next video
+- Nod up --> Previous video
+- Tilt left --> Like
+- Tilt right --> Save
+- Blink --> Pause / Play
+- Press D	Toggle debug panel
+- When debug panel is open, press unmute to hear sounds
+- When debug panel is open, press recal (recalibrate) to make webcam adapt to your new surroundings
 
 #### Tech Stack
 
