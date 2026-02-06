@@ -10,6 +10,7 @@ No backend. No database. Pure frontend demonstration.
 
 ### Getting Started
 Install dependencies
+```Install node.js, make sure you install to PATH```
 ```npm install```
 
 Run dev server
