@@ -26,7 +26,7 @@ Allow camera access when prompted.
 
 You need:
 
-- Node.js 18+
+- Node.js (Latest LTS version(
 
 - -npm (comes with Node)
 
