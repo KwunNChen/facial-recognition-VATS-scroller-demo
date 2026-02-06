@@ -5,47 +5,32 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 type Reel = {
   id: number;
-  user: string;
-  caption: string;
   src: string;
 };
 
 const REELS: Reel[] = [
   {
     id: 1,
-    user: "nature_daily",
-    caption: "Morning light over the ridge 🌄",
-    
     src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
   },
   {
     id: 2,
-    user: "cityvibes",
-    caption: "Night drive through downtown 🚗",
     src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4",
   },
   {
     id: 3,
-    user: "sports_clipz",
-    caption: "That finish was unreal 😮",
     src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
   },
   {
     id: 4,
-    user: "travelwithme",
-    caption: "Tiny roads, big views ✈️",
     src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
   },
   {
     id: 5,
-    user: "foodmode",
-    caption: "Crunch test ✅",
     src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
   },
   {
     id: 6,
-    user: "random",
-    caption: "POV: you found a better workflow",
     src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
   },
 ];
