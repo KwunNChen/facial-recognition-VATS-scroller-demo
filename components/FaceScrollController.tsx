@@ -4,6 +4,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 
 type Props = {
+  showDebug?: boolean;
+
   onLookDown: () => void;
   onLookUp: () => void;
   onTiltLeft: () => void;
@@ -15,6 +17,7 @@ type Props = {
 };
 
 export default function FaceScrollController({
+  showDebug,
   onLookDown,
   onLookUp,
   onTiltLeft,
@@ -30,23 +33,13 @@ export default function FaceScrollController({
   const onTiltRightRef = useRef(onTiltRight);
   const onBlinkRef = useRef(onBlink);
 
-  useEffect(() => {
-    onLookDownRef.current = onLookDown;
-  }, [onLookDown]);
-  useEffect(() => {
-    onLookUpRef.current = onLookUp;
-  }, [onLookUp]);
-  useEffect(() => {
-    onTiltLeftRef.current = onTiltLeft;
-  }, [onTiltLeft]);
-  useEffect(() => {
-    onTiltRightRef.current = onTiltRight;
-  }, [onTiltRight]);
-  useEffect(() => {
-    onBlinkRef.current = onBlink;
-  }, [onBlink]);
+  useEffect(() => void (onLookDownRef.current = onLookDown), [onLookDown]);
+  useEffect(() => void (onLookUpRef.current = onLookUp), [onLookUp]);
+  useEffect(() => void (onTiltLeftRef.current = onTiltLeft), [onTiltLeft]);
+  useEffect(() => void (onTiltRightRef.current = onTiltRight), [onTiltRight]);
+  useEffect(() => void (onBlinkRef.current = onBlink), [onBlink]);
 
-  // ✅ Accurate fired counters (never miss because of UI throttling)
+  // Fired counters (accurate even with throttled UI)
   const firedDownCountRef = useRef(0);
   const firedUpCountRef = useRef(0);
   const firedLeftCountRef = useRef(0);
@@ -54,7 +47,11 @@ export default function FaceScrollController({
   const firedBlinkCountRef = useRef(0);
 
   // Model/video refs
+  // - videoRef: always mounted (hidden). Stream attaches here so it never "drops" when debug hides.
+  // - previewRef: optional visible preview when debug is shown.
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const previewRef = useRef<HTMLVideoElement | null>(null);
+
   const landmarkerRef = useRef<FaceLandmarker | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -83,7 +80,7 @@ export default function FaceScrollController({
 
   const [status, setStatus] = useState("Starting...");
 
-  // Debug UI
+  // Debug UI state
   const [debug, setDebug] = useState({
     pitchDelta: 0,
     rollDelta: 0,
@@ -120,28 +117,48 @@ export default function FaceScrollController({
   const blinkThrRef = useRef(blinkThreshold);
   const blinkFramesRef = useRef(blinkFramesNeeded);
 
-  useEffect(() => {
-    downThrRef.current = downThreshold;
-  }, [downThreshold]);
-  useEffect(() => {
-    upThrRef.current = upThreshold;
-  }, [upThreshold]);
-  useEffect(() => {
-    tiltThrRef.current = tiltThreshold;
-  }, [tiltThreshold]);
-  useEffect(() => {
-    framesRef.current = framesNeeded;
-  }, [framesNeeded]);
-
-  useEffect(() => {
-    blinkThrRef.current = blinkThreshold;
-  }, [blinkThreshold]);
-  useEffect(() => {
-    blinkFramesRef.current = blinkFramesNeeded;
-  }, [blinkFramesNeeded]);
+  useEffect(() => void (downThrRef.current = downThreshold), [downThreshold]);
+  useEffect(() => void (upThrRef.current = upThreshold), [upThreshold]);
+  useEffect(() => void (tiltThrRef.current = tiltThreshold), [tiltThreshold]);
+  useEffect(() => void (framesRef.current = framesNeeded), [framesNeeded]);
+  useEffect(() => void (blinkThrRef.current = blinkThreshold), [blinkThreshold]);
+  useEffect(() => void (blinkFramesRef.current = blinkFramesNeeded), [blinkFramesNeeded]);
 
   const cooldownMs = 1200;
   const blinkCooldownMs = 700;
+
+  function resetFrames() {
+    downFramesRef.current = 0;
+    upFramesRef.current = 0;
+    leftFramesRef.current = 0;
+    rightFramesRef.current = 0;
+  }
+
+  function recalibrate() {
+    pitchBaselineRef.current = null;
+    rollBaselineRef.current = null;
+    resetFrames();
+
+    blinkFramesCountRef.current = 0;
+    blinkLatchedRef.current = false;
+
+    setStatus("Recalibrating…");
+    if (recalTimeoutRef.current) window.clearTimeout(recalTimeoutRef.current);
+    recalTimeoutRef.current = window.setTimeout(() => setStatus("Face tracking active ✅"), 600);
+  }
+
+  // If debug is re-shown later, re-attach stream to the preview (since it may mount after init).
+  useEffect(() => {
+    if (showDebug === false) return;
+
+    const stream = streamRef.current;
+    const preview = previewRef.current;
+
+    if (!stream || !preview) return;
+
+    preview.srcObject = stream;
+    preview.play().catch(() => {});
+  }, [showDebug]);
 
   useEffect(() => {
     let cancelled = false;
@@ -170,11 +187,18 @@ export default function FaceScrollController({
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         streamRef.current = stream;
 
-        const video = videoRef.current;
-        if (!video) return;
+        const anchor = videoRef.current;
+        if (!anchor) return;
 
-        video.srcObject = stream;
-        await video.play();
+        anchor.srcObject = stream;
+        await anchor.play();
+
+        // Attach to preview too (if mounted)
+        const preview = previewRef.current;
+        if (preview) {
+          preview.srcObject = stream;
+          await preview.play().catch(() => {});
+        }
 
         setStatus("Loading face model...");
         const vision = await FilesetResolver.forVisionTasks(
@@ -193,7 +217,7 @@ export default function FaceScrollController({
           outputFaceBlendshapes: true,
         });
 
-        await waitForVideoReady(video);
+        await waitForVideoReady(anchor);
         if (cancelled) return;
 
         setStatus("Face tracking active ✅");
@@ -224,7 +248,7 @@ export default function FaceScrollController({
       if (results.faceLandmarks?.length) {
         const face = results.faceLandmarks[0];
 
-        // Nod signal: nose relative to eye line
+        // Nose vs eye line for pitch
         const nose = face[1];
         const leftEyeOuter = face[33];
         const rightEyeOuter = face[263];
@@ -236,11 +260,8 @@ export default function FaceScrollController({
         if (pitchBaselineRef.current === null) pitchBaselineRef.current = pitch;
         if (rollBaselineRef.current === null) rollBaselineRef.current = roll;
 
-        const pitchBase = pitchBaselineRef.current ?? pitch;
-        const rollBase = rollBaselineRef.current ?? roll;
-
-        const pitchDelta = pitch - pitchBase;
-        const rollDelta = roll - rollBase;
+        const pitchDelta = pitch - (pitchBaselineRef.current ?? pitch);
+        const rollDelta = roll - (rollBaselineRef.current ?? roll);
 
         const downThr = downThrRef.current;
         const upThr = upThrRef.current;
@@ -253,7 +274,6 @@ export default function FaceScrollController({
         const isTiltLeft = rollDelta < -tiltThr;
         const isTiltRight = rollDelta > tiltThr;
 
-        // accumulate tilt frames using the SAME threshold you show in UI
         leftFramesRef.current = isTiltLeft ? leftFramesRef.current + 1 : 0;
         rightFramesRef.current = isTiltRight ? rightFramesRef.current + 1 : 0;
 
@@ -272,50 +292,30 @@ export default function FaceScrollController({
 
         const nowMs = Date.now();
 
-        // DOWN trigger
         if (downFramesRef.current >= need && nowMs - lastDownTriggerRef.current > cooldownMs) {
           lastDownTriggerRef.current = nowMs;
-          downFramesRef.current = 0;
-          upFramesRef.current = 0;
-          leftFramesRef.current = 0;
-          rightFramesRef.current = 0;
-
+          resetFrames();
           firedDownCountRef.current += 1;
           onLookDownRef.current();
         }
 
-        // UP trigger
         if (upFramesRef.current >= need && nowMs - lastUpTriggerRef.current > cooldownMs) {
           lastUpTriggerRef.current = nowMs;
-          upFramesRef.current = 0;
-          downFramesRef.current = 0;
-          leftFramesRef.current = 0;
-          rightFramesRef.current = 0;
-
+          resetFrames();
           firedUpCountRef.current += 1;
           onLookUpRef.current();
         }
 
-        // TILT LEFT trigger  ✅ FIXED: increments LEFT
         if (leftFramesRef.current >= need && nowMs - lastLeftTriggerRef.current > cooldownMs) {
           lastLeftTriggerRef.current = nowMs;
-          leftFramesRef.current = 0;
-          rightFramesRef.current = 0;
-          downFramesRef.current = 0;
-          upFramesRef.current = 0;
-
-          firedLeftCountRef.current += 1; // ✅ was wrong before
+          resetFrames();
+          firedLeftCountRef.current += 1;
           onTiltLeftRef.current();
         }
 
-        // TILT RIGHT trigger
         if (rightFramesRef.current >= need && nowMs - lastRightTriggerRef.current > cooldownMs) {
           lastRightTriggerRef.current = nowMs;
-          rightFramesRef.current = 0;
-          leftFramesRef.current = 0;
-          downFramesRef.current = 0;
-          upFramesRef.current = 0;
-
+          resetFrames();
           firedRightCountRef.current += 1;
           onTiltRightRef.current();
         }
@@ -323,8 +323,8 @@ export default function FaceScrollController({
         // Blink from blendshapes
         const bs = results.faceBlendshapes?.[0]?.categories;
         if (bs) {
-          const left = bs.find((c) => c.categoryName === "eyeBlinkLeft")?.score ?? 0;
-          const right = bs.find((c) => c.categoryName === "eyeBlinkRight")?.score ?? 0;
+          const left = bs.find((c: any) => c.categoryName === "eyeBlinkLeft")?.score ?? 0;
+          const right = bs.find((c: any) => c.categoryName === "eyeBlinkRight")?.score ?? 0;
           blinkScore = (left + right) / 2;
         }
 
@@ -355,7 +355,7 @@ export default function FaceScrollController({
         const now = performance.now();
         if (now - lastUiUpdate > 100) {
           lastUiUpdate = now;
-          setDebug(() => ({
+          setDebug({
             pitchDelta: Number(pitchDelta.toFixed(3)),
             rollDelta: Number(rollDelta.toFixed(3)),
             blink: Number(blinkScore.toFixed(2)),
@@ -373,7 +373,7 @@ export default function FaceScrollController({
             fUp: upFramesRef.current,
             fLeft: leftFramesRef.current,
             fRight: rightFramesRef.current,
-          }));
+          });
         }
       }
 
@@ -392,191 +392,181 @@ export default function FaceScrollController({
   }, []);
 
   const btnStyle: React.CSSProperties = {
-    color: "white",
-    background: "rgba(255,255,255,0.15)",
-    border: "1px solid rgba(255,255,255,0.25)",
+    color: "#00ff9c",
+    background: "rgba(0,20,10,0.85)",
+    border: "1px solid rgba(0,255,156,0.55)",
     borderRadius: 6,
     padding: "4px 8px",
     cursor: "pointer",
+    textShadow: "0 0 6px rgba(0,255,156,0.45)",
+  };
+
+  const panelStyle: React.CSSProperties = {
+    position: "fixed",
+    bottom: 12,
+    left: 12,
+    background: "rgba(0,20,10,0.92)",
+    color: "#00ff9c",
+    padding: 10,
+    borderRadius: 10,
+    fontSize: 12,
+    zIndex: 20,
+    width: 340,
+    border: "1px solid rgba(0,255,156,0.55)",
+    boxShadow: "0 0 18px rgba(0,255,156,0.25)",
+    fontFamily: "monospace",
   };
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        bottom: 12,
-        left: 12,
-        background: "rgba(0,0,0,0.75)",
-        color: "white",
-        padding: 10,
-        borderRadius: 10,
-        fontSize: 12,
-        zIndex: 20,
-        width: 340,
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-        <div style={{ fontWeight: 700 }}>
-          {status}{" "}
-          <span style={{ fontWeight: 500, opacity: 0.85 }}>
-            | blink {debug.blink.toFixed(2)} | bf {debug.blinkFrames} |{" "}
-            {debug.blinkLatched ? "latched" : "armed"}
-          </span>
+    <>
+      {/* Always mounted: keeps stream attached even when debug panel hides */}
+      <video ref={videoRef} playsInline muted style={{ display: "none" }} />
+
+      {showDebug !== false && (
+        <div style={panelStyle}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+            <div style={{ fontWeight: 700 }}>
+              {status}{" "}
+              <span style={{ fontWeight: 500, opacity: 0.85 }}>
+                | blink {debug.blink.toFixed(2)} | bf {debug.blinkFrames} |{" "}
+                {debug.blinkLatched ? "latched" : "armed"}
+              </span>
+            </div>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" style={btnStyle} onClick={onToggleMute}>
+                {muted ? "UNMUTE" : "MUTE"}
+              </button>
+
+              <button type="button" style={btnStyle} onClick={recalibrate}>
+                RECAL
+              </button>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 8 }}>
+            state: <b>{debug.state}</b>
+            <br />
+            pitch Δ: {debug.pitchDelta} | f: {debug.fDown}/{debug.fUp}
+            <br />
+            roll Δ: {debug.rollDelta} | fL/fR: {debug.fLeft}/{debug.fRight}
+            <br />
+            blink: {debug.blink} frames: {debug.blinkFrames} fired: {debug.firedBlink}
+            <br />
+            fired: D {debug.firedDown} / U {debug.firedUp} / L {debug.firedLeft} / R {debug.firedRight}
+          </div>
+
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Down threshold</span>
+              <span style={{ fontFamily: "monospace" }}>{downThreshold.toFixed(3)}</span>
+            </div>
+            <input
+              type="range"
+              min="0.001"
+              max="0.120"
+              step="0.001"
+              value={downThreshold}
+              onChange={(e) => setDownThreshold(Number(e.target.value))}
+              style={{ width: "100%" }}
+            />
+          </div>
+
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Up threshold</span>
+              <span style={{ fontFamily: "monospace" }}>{upThreshold.toFixed(3)}</span>
+            </div>
+            <input
+              type="range"
+              min="0.001"
+              max="0.120"
+              step="0.001"
+              value={upThreshold}
+              onChange={(e) => setUpThreshold(Number(e.target.value))}
+              style={{ width: "100%" }}
+            />
+          </div>
+
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Tilt threshold</span>
+              <span style={{ fontFamily: "monospace" }}>{tiltThreshold.toFixed(3)}</span>
+            </div>
+            <input
+              type="range"
+              min="0.040"
+              max="0.300"
+              step="0.005"
+              value={tiltThreshold}
+              onChange={(e) => setTiltThreshold(Number(e.target.value))}
+              style={{ width: "100%" }}
+            />
+          </div>
+
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Frames needed</span>
+              <span style={{ fontFamily: "monospace" }}>{framesNeeded}</span>
+            </div>
+            <input
+              type="range"
+              min="1"
+              max="12"
+              step="1"
+              value={framesNeeded}
+              onChange={(e) => setFramesNeeded(Number(e.target.value))}
+              style={{ width: "100%" }}
+            />
+          </div>
+
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Blink threshold</span>
+              <span style={{ fontFamily: "monospace" }}>{blinkThreshold.toFixed(2)}</span>
+            </div>
+            <input
+              type="range"
+              min="0.2"
+              max="0.9"
+              step="0.01"
+              value={blinkThreshold}
+              onChange={(e) => setBlinkThreshold(Number(e.target.value))}
+              style={{ width: "100%" }}
+            />
+          </div>
+
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Blink frames</span>
+              <span style={{ fontFamily: "monospace" }}>{blinkFramesNeeded}</span>
+            </div>
+            <input
+              type="range"
+              min="1"
+              max="6"
+              step="1"
+              value={blinkFramesNeeded}
+              onChange={(e) => setBlinkFramesNeeded(Number(e.target.value))}
+              style={{ width: "100%" }}
+            />
+          </div>
+
+          {/* Webcam preview (only shown when debug panel is shown) */}
+          <div style={{ marginTop: 10 }}>
+            <video
+              ref={previewRef}
+              width={320}
+              height={190}
+              muted={muted}
+              playsInline
+              style={{ borderRadius: 10, width: "100%" }}
+            />
+          </div>
+
+          <div style={{ marginTop: 8, opacity: 0.8 }}>Tip: press D to hide this panel.</div>
         </div>
-
-        <div style={{ display: "flex", gap: 8 }}>
-          <button type="button" style={btnStyle} onClick={onToggleMute}>
-            {muted ? "Unmute" : "Mute"}
-          </button>
-
-          <button
-            type="button"
-            style={btnStyle}
-            onClick={() => {
-              pitchBaselineRef.current = null;
-              rollBaselineRef.current = null;
-              downFramesRef.current = 0;
-              upFramesRef.current = 0;
-              leftFramesRef.current = 0;
-              rightFramesRef.current = 0;
-              blinkFramesCountRef.current = 0;
-              blinkLatchedRef.current = false;
-
-              setStatus("Recalibrating…");
-
-              if (recalTimeoutRef.current) window.clearTimeout(recalTimeoutRef.current);
-              recalTimeoutRef.current = window.setTimeout(() => {
-                setStatus("Face tracking active ✅");
-              }, 600);
-            }}
-          >
-            Recalibrate
-          </button>
-        </div>
-      </div>
-
-      <div style={{ marginTop: 8, fontFamily: "monospace" }}>
-        state: <b>{debug.state}</b>
-        <br />
-        pitch Δ: {debug.pitchDelta} | f: {debug.fDown}/{debug.fUp}
-        <br />
-        roll Δ: {debug.rollDelta} | fL/fR: {debug.fLeft}/{debug.fRight}
-        <br />
-        blink: {debug.blink} frames: {debug.blinkFrames} fired: {debug.firedBlink}
-        <br />
-        fired: D {debug.firedDown} / U {debug.firedUp} / L {debug.firedLeft} / R {debug.firedRight}
-      </div>
-
-      <div style={{ marginTop: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>Down threshold</span>
-          <span style={{ fontFamily: "monospace" }}>{downThreshold.toFixed(3)}</span>
-        </div>
-        <input
-          type="range"
-          min="0.001"
-          max="0.120"
-          step="0.001"
-          value={downThreshold}
-          onChange={(e) => setDownThreshold(Number(e.target.value))}
-          style={{ width: "100%" }}
-        />
-      </div>
-
-      <div style={{ marginTop: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>Up threshold</span>
-          <span style={{ fontFamily: "monospace" }}>{upThreshold.toFixed(3)}</span>
-        </div>
-        <input
-          type="range"
-          min="0.001"
-          max="0.120"
-          step="0.001"
-          value={upThreshold}
-          onChange={(e) => setUpThreshold(Number(e.target.value))}
-          style={{ width: "100%" }}
-        />
-      </div>
-
-      <div style={{ marginTop: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>Tilt threshold</span>
-          <span style={{ fontFamily: "monospace" }}>{tiltThreshold.toFixed(3)}</span>
-        </div>
-        <input
-          type="range"
-          min="0.040"
-          max="0.300"
-          step="0.005"
-          value={tiltThreshold}
-          onChange={(e) => setTiltThreshold(Number(e.target.value))}
-          style={{ width: "100%" }}
-        />
-      </div>
-
-      <div style={{ marginTop: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>Frames needed</span>
-          <span style={{ fontFamily: "monospace" }}>{framesNeeded}</span>
-        </div>
-        <input
-          type="range"
-          min="1"
-          max="12"
-          step="1"
-          value={framesNeeded}
-          onChange={(e) => setFramesNeeded(Number(e.target.value))}
-          style={{ width: "100%" }}
-        />
-      </div>
-
-      <div style={{ marginTop: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>Blink threshold</span>
-          <span style={{ fontFamily: "monospace" }}>{blinkThreshold.toFixed(2)}</span>
-        </div>
-        <input
-          type="range"
-          min="0.20"
-          max="0.90"
-          step="0.01"
-          value={blinkThreshold}
-          onChange={(e) => setBlinkThreshold(Number(e.target.value))}
-          style={{ width: "100%" }}
-        />
-      </div>
-
-      <div style={{ marginTop: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>Blink frames</span>
-          <span style={{ fontFamily: "monospace" }}>{blinkFramesNeeded}</span>
-        </div>
-        <input
-          type="range"
-          min="1"
-          max="6"
-          step="1"
-          value={blinkFramesNeeded}
-          onChange={(e) => setBlinkFramesNeeded(Number(e.target.value))}
-          style={{ width: "100%" }}
-        />
-      </div>
-
-      <div style={{ marginTop: 10 }}>
-        <video
-          ref={videoRef}
-          width={320}
-          height={190}
-          muted={muted}
-          playsInline
-          style={{ borderRadius: 10, width: "100%" }}
-        />
-      </div>
-
-      <div style={{ marginTop: 8, opacity: 0.8 }}>
-        Tip: if left/right feel swapped, swap handlers in page.tsx.
-      </div>
-    </div>
+      )}
+    </>
   );
 }

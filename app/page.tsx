@@ -7,31 +7,31 @@ type Reel = {
   id: number;
   src: string;
 };
-
+//Content of reels is hardcoded for demo purposes. They're all related to FALLOUT New Vegas/West Coast because I like FALLOUT.
 const REELS: Reel[] = [
   {
     id: 1,
-    src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
+    src: "/videos/MaximumNCR.mp4",
   },
   {
     id: 2,
-    src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4",
+    src: "/videos/NCRArrives.mp4",
   },
   {
     id: 3,
-    src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
+    src: "/videos/NewVegasEdit.mp4",
   },
   {
     id: 4,
-    src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+    src: "/videos/OpSunburst.mp4",
   },
   {
     id: 5,
-    src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+    src: "/videos/NVTrailer.mp4",
   },
   {
     id: 6,
-    src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+    src: "/videos/RangerArmor.mp4",
   },
 ];
 
@@ -43,10 +43,10 @@ function clamp01(x: number) {
 
 export default function Home() {
   const reels = REELS;
-
+  //Features like refs and state for managing reels, playback, and user interactions
   const reelRefs = useRef<(HTMLDivElement | null)[]>([]);
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
-
+  
   const indexRef = useRef(0);
   const lastActionRef = useRef(0);
 
@@ -57,7 +57,9 @@ export default function Home() {
   const [liked, setLiked] = useState<boolean[]>(() => Array(reels.length).fill(false));
   const [saved, setSaved] = useState<boolean[]>(() => Array(reels.length).fill(false));
 
-  const [progressPct, setProgressPct] = useState(0); // 0..1
+  const [progressPct, setProgressPct] = useState(0); 
+  const [showDebug, setShowDebug] = useState(true);
+
   const progRafRef = useRef<number | null>(null);
   const lastProgUiRef = useRef(0);
 
@@ -65,6 +67,16 @@ export default function Home() {
     indexRef.current = index;
   }, [index]);
 
+  //This is a debug feature to toggle visibility of debug info with the "D" key. It adds a keydown event listener on mount and cleans up on unmount.
+  useEffect(() => {
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key.toLowerCase() === "d") setShowDebug((s) => !s);
+  }
+  window.addEventListener("keydown", onKeyDown);
+  return () => window.removeEventListener("keydown", onKeyDown);
+}, []);
+
+  // Helper functions below to manage actions with cooldown to prevent spamming and ensure smooth UX
   function canAct() {
     const now = Date.now();
     if (now - lastActionRef.current < ACTION_COOLDOWN_MS) return false;
@@ -288,8 +300,6 @@ export default function Home() {
               pointerEvents: "none",
             }}
           >
-            <div style={{ fontWeight: 800, fontSize: 16 }}>@{r.user}</div>
-            <div style={{ marginTop: 6, fontSize: 14, opacity: 0.95 }}>{r.caption}</div>
             <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
               {paused ? "Paused" : "Playing"} • {muted ? "Muted" : "Sound on"}
             </div>
@@ -391,6 +401,7 @@ export default function Home() {
         onBlink={togglePause}
         muted={muted}
         onToggleMute={toggleMuted}
+        showDebug={showDebug}
       />
     </main>
   );
