@@ -7,8 +7,8 @@ It uses real-time face tracking in the browser to navigate short-form videos han
 No backend. No database. Pure frontend demonstration.
 
 ### Getting Started
+Install node.js, make sure you install to PATH
 Install dependencies
-```Install node.js, make sure you install to PATH```
 ```npm install```
 
 Run dev server
