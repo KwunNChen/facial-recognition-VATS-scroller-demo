@@ -352,8 +352,9 @@ export default function FaceScrollController({
         const isDownRaw = pitchDelta > downThr;
         const isUpRaw = pitchDelta < -upThr;
 
-        const isTiltLeft = rollDelta < -tiltThr;
-        const isTiltRight = rollDelta > tiltThr;
+        const isTiltLeft = rollDelta > tiltThr;
+        const isTiltRight = rollDelta < -tiltThr;
+
 
         // Don’t allow nod + tilt to both accumulate
         leftFramesRef.current = isTiltLeft ? leftFramesRef.current + 1 : 0;
