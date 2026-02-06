@@ -1,13 +1,21 @@
 "use client";
 
 import FaceScrollController from "@/components/FaceScrollController";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-const reels = [
+type Reel = {
+  id: number;
+  user: string;
+  caption: string;
+  src: string;
+};
+
+const REELS: Reel[] = [
   {
     id: 1,
     user: "nature_daily",
     caption: "Morning light over the ridge 🌄",
+    
     src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
   },
   {
@@ -42,26 +50,35 @@ const reels = [
   },
 ];
 
+const ACTION_COOLDOWN_MS = 650;
+
+function clamp01(x: number) {
+  return Math.max(0, Math.min(1, x));
+}
+
 export default function Home() {
+  const reels = REELS;
+
   const reelRefs = useRef<(HTMLDivElement | null)[]>([]);
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
+
   const indexRef = useRef(0);
+  const lastActionRef = useRef(0);
 
   const [index, setIndex] = useState(0);
   const [muted, setMuted] = useState(true);
   const [paused, setPaused] = useState(false);
 
-  const [liked, setLiked] = useState<boolean[]>(Array(reels.length).fill(false));
-  const [saved, setSaved] = useState<boolean[]>(Array(reels.length).fill(false));
+  const [liked, setLiked] = useState<boolean[]>(() => Array(reels.length).fill(false));
+  const [saved, setSaved] = useState<boolean[]>(() => Array(reels.length).fill(false));
 
-  // Smooth progress for ACTIVE reel only
   const [progressPct, setProgressPct] = useState(0); // 0..1
   const progRafRef = useRef<number | null>(null);
   const lastProgUiRef = useRef(0);
 
-  // Global action cooldown so gestures don’t “carry over”
-  const lastActionRef = useRef(0);
-  const ACTION_COOLDOWN_MS = 650;
+  useEffect(() => {
+    indexRef.current = index;
+  }, [index]);
 
   function canAct() {
     const now = Date.now();
@@ -70,26 +87,23 @@ export default function Home() {
     return true;
   }
 
-  useEffect(() => {
-    indexRef.current = index;
-  }, [index]);
-
   function scrollTo(i: number) {
     reelRefs.current[i]?.scrollIntoView({ behavior: "smooth" });
   }
 
-  function next() {
-    if (!canAct()) return;
-    const i = Math.min(indexRef.current + 1, reels.length - 1);
+  function goTo(i: number) {
     setIndex(i);
     scrollTo(i);
   }
 
+  function next() {
+    if (!canAct()) return;
+    goTo(Math.min(indexRef.current + 1, reels.length - 1));
+  }
+
   function prev() {
     if (!canAct()) return;
-    const i = Math.max(indexRef.current - 1, 0);
-    setIndex(i);
-    scrollTo(i);
+    goTo(Math.max(indexRef.current - 1, 0));
   }
 
   function toggleMuted() {
@@ -102,27 +116,25 @@ export default function Home() {
     setPaused((p) => !p);
   }
 
-  function toggleLike() {
+  function toggleAtIndex(setter: React.Dispatch<React.SetStateAction<boolean[]>>) {
     if (!canAct()) return;
-    setLiked((arr) => {
+    setter((arr) => {
       const copy = [...arr];
       const i = indexRef.current;
       copy[i] = !copy[i];
       return copy;
     });
+  }
+
+  function toggleLike() {
+    toggleAtIndex(setLiked);
   }
 
   function toggleSave() {
-    if (!canAct()) return;
-    setSaved((arr) => {
-      const copy = [...arr];
-      const i = indexRef.current;
-      copy[i] = !copy[i];
-      return copy;
-    });
+    toggleAtIndex(setSaved);
   }
 
-  // Keep counter in sync with manual scroll
+  // Keep index in sync with manual scroll
   useEffect(() => {
     const els = reelRefs.current.filter(Boolean) as HTMLDivElement[];
     if (els.length === 0) return;
@@ -133,6 +145,7 @@ export default function Home() {
 
         for (const e of entries) {
           if (!e.isIntersecting) continue;
+
           const idx = els.indexOf(e.target as HTMLDivElement);
           if (idx === -1) continue;
 
@@ -151,8 +164,9 @@ export default function Home() {
 
   // Playback policy: only active reel plays; apply muted + paused
   useEffect(() => {
-    videoRefs.current.forEach((v, i) => {
-      if (!v) return;
+    for (let i = 0; i < videoRefs.current.length; i++) {
+      const v = videoRefs.current[i];
+      if (!v) continue;
 
       v.muted = muted;
 
@@ -163,9 +177,8 @@ export default function Home() {
         v.pause();
         v.currentTime = 0;
       }
-    });
+    }
 
-    // reset progress when switching reels
     setProgressPct(0);
   }, [index, muted, paused]);
 
@@ -175,31 +188,31 @@ export default function Home() {
 
     function tick() {
       const v = videoRefs.current[index];
+
       if (v && isFinite(v.duration) && v.duration > 0) {
-        const pct = v.currentTime / v.duration;
+        const pct = clamp01(v.currentTime / v.duration);
 
         // throttle React updates (~20fps)
         const now = performance.now();
         if (now - lastProgUiRef.current > 50) {
           lastProgUiRef.current = now;
-          setProgressPct(Math.max(0, Math.min(1, pct)));
+          setProgressPct(pct);
         }
       } else {
         setProgressPct(0);
       }
+
       progRafRef.current = requestAnimationFrame(tick);
     }
 
     progRafRef.current = requestAnimationFrame(tick);
-
     return () => {
       if (progRafRef.current) cancelAnimationFrame(progRafRef.current);
     };
   }, [index]);
 
-  return (
-    <main style={{ height: "100vh", overflowY: "scroll", scrollSnapType: "y mandatory" }}>
-      {/* Minimal top controls only (no mute here anymore) */}
+  const topControls = useMemo(
+    () => (
       <div
         style={{
           position: "fixed",
@@ -221,6 +234,13 @@ export default function Home() {
           </div>
         </div>
       </div>
+    ),
+    [index, reels.length]
+  );
+
+  return (
+    <main style={{ height: "100vh", overflowY: "scroll", scrollSnapType: "y mandatory" }}>
+      {topControls}
 
       {reels.map((r, i) => (
         <div
@@ -237,7 +257,6 @@ export default function Home() {
             borderBottom: "1px solid #111",
           }}
         >
-          {/* Video */}
           <video
             ref={(el) => {
               videoRefs.current[i] = el;
@@ -246,11 +265,7 @@ export default function Home() {
             muted={muted}
             playsInline
             preload="metadata"
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-            }}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
           />
 
           {/* Progress bar (smooth) */}
@@ -383,14 +398,6 @@ export default function Home() {
         </div>
       ))}
 
-      {/* Face controls:
-          - Look down: next
-          - Look up: prev
-          - Tilt left: like
-          - Tilt right: save
-          - Blink: pause/play
-          - Mute moved into debug UI
-      */}
       <FaceScrollController
         onLookDown={next}
         onLookUp={prev}
