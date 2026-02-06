@@ -1,38 +1,21 @@
 "use client";
 
 import FaceScrollController from "@/components/FaceScrollController";
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 type Reel = {
   id: number;
   src: string;
 };
-//Content of reels is hardcoded for demo purposes. They're all related to FALLOUT New Vegas/West Coast because I like FALLOUT.
+
+// Content hardcoded for demo purposes (Fallout NV / West Coast)
 const REELS: Reel[] = [
-  {
-    id: 1,
-    src: "/videos/MaximumNCR.mp4",
-  },
-  {
-    id: 2,
-    src: "/videos/NCRArrives.mp4",
-  },
-  {
-    id: 3,
-    src: "/videos/NewVegasEdit.mp4",
-  },
-  {
-    id: 4,
-    src: "/videos/OpSunburst.mp4",
-  },
-  {
-    id: 5,
-    src: "/videos/NVTrailer.mp4",
-  },
-  {
-    id: 6,
-    src: "/videos/RangerArmor.mp4",
-  },
+  { id: 1, src: "/videos/MaximumNCR.mp4" },
+  { id: 2, src: "/videos/NCRArrives.mp4" },
+  { id: 3, src: "/videos/NewVegasEdit.mp4" },
+  { id: 4, src: "/videos/OpSunburst.mp4" },
+  { id: 5, src: "/videos/NVTrailer.mp4" },
+  { id: 6, src: "/videos/RangerArmor.mp4" },
 ];
 
 const ACTION_COOLDOWN_MS = 650;
@@ -42,11 +25,19 @@ function clamp01(x: number) {
 }
 
 export default function Home() {
+  // Boot screen
+  const [booting, setBooting] = useState(true);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setBooting(false), 1400);
+    return () => window.clearTimeout(t);
+  }, []);
+
   const reels = REELS;
-  //Features like refs and state for managing reels, playback, and user interactions
+
+  // Refs/state for reels
   const reelRefs = useRef<(HTMLDivElement | null)[]>([]);
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
-  
   const indexRef = useRef(0);
   const lastActionRef = useRef(0);
 
@@ -57,7 +48,7 @@ export default function Home() {
   const [liked, setLiked] = useState<boolean[]>(() => Array(reels.length).fill(false));
   const [saved, setSaved] = useState<boolean[]>(() => Array(reels.length).fill(false));
 
-  const [progressPct, setProgressPct] = useState(0); 
+  const [progressPct, setProgressPct] = useState(0);
   const [showDebug, setShowDebug] = useState(true);
 
   const progRafRef = useRef<number | null>(null);
@@ -67,16 +58,15 @@ export default function Home() {
     indexRef.current = index;
   }, [index]);
 
-  //This is a debug feature to toggle visibility of debug info with the "D" key. It adds a keydown event listener on mount and cleans up on unmount.
+  // Toggle debug with "D"
   useEffect(() => {
-  function onKeyDown(e: KeyboardEvent) {
-    if (e.key.toLowerCase() === "d") setShowDebug((s) => !s);
-  }
-  window.addEventListener("keydown", onKeyDown);
-  return () => window.removeEventListener("keydown", onKeyDown);
-}, []);
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key.toLowerCase() === "d") setShowDebug((s) => !s);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
-  // Helper functions below to manage actions with cooldown to prevent spamming and ensure smooth UX
   function canAct() {
     const now = Date.now();
     if (now - lastActionRef.current < ACTION_COOLDOWN_MS) return false;
@@ -189,7 +179,6 @@ export default function Home() {
       if (v && isFinite(v.duration) && v.duration > 0) {
         const pct = clamp01(v.currentTime / v.duration);
 
-        // throttle React updates (~20fps)
         const now = performance.now();
         if (now - lastProgUiRef.current > 50) {
           lastProgUiRef.current = now;
@@ -235,9 +224,60 @@ export default function Home() {
     [index, reels.length]
   );
 
+  if (booting) {
+    return (
+      <div
+        style={{
+          height: "100vh",
+          background: "black",
+          color: "#00ff9c",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontFamily: "Courier New, monospace",
+          fontSize: 28,
+          letterSpacing: 2,
+        }}
+      >
+        VAULT-TEC SYSTEM BOOTING...
+      </div>
+    );
+  }
+
   return (
     <main style={{ height: "100vh", overflowY: "scroll", scrollSnapType: "y mandatory" }}>
       {topControls}
+
+      {/* Control instructions overlay */}
+      <div
+        style={{
+          position: "fixed",
+          top: 20,
+          right: 20,
+          background: "rgba(0,20,10,0.85)",
+          padding: 14,
+          borderRadius: 10,
+          border: "1px solid rgba(0,255,156,0.4)",
+          fontSize: 13,
+          lineHeight: 1.6,
+          zIndex: 50,
+          color: "#00ff9c",
+          fontFamily: "monospace",
+          pointerEvents: "none",
+        }}
+      >
+        <b>PIP-BOY CONTROL LINK</b>
+        <br />
+        Nod ↓ : Next
+        <br />
+        Nod ↑ : Previous
+        <br />
+        Tilt ← : Like
+        <br />
+        Tilt → : Save
+        <br />
+        Blink : Pause
+      </div>
 
       {reels.map((r, i) => (
         <div
@@ -265,7 +305,7 @@ export default function Home() {
             style={{ width: "100%", height: "100%", objectFit: "cover" }}
           />
 
-          {/* Progress bar (smooth) */}
+          {/* Progress bar */}
           <div
             style={{
               position: "absolute",
@@ -282,12 +322,11 @@ export default function Home() {
                 height: "100%",
                 width: `${(i === index ? progressPct : 0) * 100}%`,
                 background: "white",
-                transition: "none",
               }}
             />
           </div>
 
-          {/* Bottom-left overlay */}
+          {/* Bottom-left status */}
           <div
             style={{
               position: "absolute",
@@ -301,7 +340,7 @@ export default function Home() {
             }}
           >
             <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
-              {paused ? "Paused" : "Playing"} • {muted ? "Muted" : "Sound on"}
+              {paused ? "SIGNAL PAUSED" : "BROADCASTING"} • {muted ? "AUDIO OFF" : "AUDIO LIVE"}
             </div>
           </div>
 
@@ -373,7 +412,7 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Small tag (top-right) */}
+          {/* Small tag */}
           <div
             style={{
               position: "absolute",
@@ -388,7 +427,7 @@ export default function Home() {
               pointerEvents: "none",
             }}
           >
-            Reel {i + 1}
+            TAPE {i + 1}
           </div>
         </div>
       ))}
