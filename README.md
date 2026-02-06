@@ -1,38 +1,41 @@
 
 ## Getting Started
-Are you too lazy to swipe on your screen? Do your hands get cold in the cold Berkeley weather? Look no further! You can now use your face to scroll up and down on your computer to scroll, and like reels!
 
-This project is a face-gesture controlled reels interface inspired by the Fallout Pip-Boy + VATS targeting system.
+Are you too lazy to swipe on your screen? Do your hands get cold in Berkeley weather? Look no further — you can now use your **face** to scroll reels hands-free (and even like/save them).
+
+This project is a face-gesture controlled reels interface inspired by the **Fallout Pip-Boy + VATS targeting system**.  
 It uses real-time face tracking in the browser to navigate short-form videos hands-free.
-No backend. No database. Pure frontend demonstration.
 
-### Getting Started
-Install node.js, make sure you install to PATH
-Install dependencies
-```npm install```
+**No backend. No database. Pure frontend demonstration.**
 
-Run dev server
-```npm run dev```
+---
 
-
-Then open on any browser:
-
-```http://localhost:3000```
-
-
-Allow camera access when prompted.
-
-### System Requirements
+## Requirements
 
 You need:
 
-- Node.js (Latest LTS version(
+- **Node.js** (Latest LTS) — make sure it’s added to PATH
+- **npm** (comes with Node, terminal-based)
+- A **webcam** (built-in or USB)
+- A modern browser
 
-- -npm (comes with Node)
+---
 
-- Webcam (built-in or USB)
+## Setup
 
-- Modern browser (Chrome recommended)
+1) Clone or download this repo, then open a terminal in the project folder.
+
+2) Install dependencies:
+```npm install```
+
+3) Run dev server, make sure to change directory to project folder
+```npm run dev```
+
+
+4) Then open on any browser:
+```http://localhost:3000```
+
+5) Allow camera access when prompted.
 
 
 #### Controls (Face Gestures)
